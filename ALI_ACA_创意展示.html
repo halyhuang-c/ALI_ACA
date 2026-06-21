@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ALI_ACA · AI 题库炼成系统 | 创意方案</title>
+<meta name="description" content="ALI_ACA —— 把纸质题库炼成可检索、可练习、可量化的数字资产。拍图 → AI 识别 → 去重 → 答题解析 → 模拟考试 + 错题本。" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0A0F1C;
+    --bg-soft:#101728;
+    --ink:#E8ECF5;
+    --ink-dim:#9AA6BE;
+    --ink-faint:#5C6783;
+    --line:rgba(232,236,245,.10);
+    --cyan:#22D3EE;
+    --cyan-soft:#5EEAD4;
+    --gold:#FBBF24;
+    --violet:#8B5CF6;
+    --serif:"Noto Serif SC", "Songti SC", serif;
+    --sans:"Noto Sans SC", system-ui, sans-serif;
+    --mono:"JetBrains Mono", ui-monospace, monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-weight:300;
+    line-height:1.7;
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* —— 全局氛围：极光渐变网格 + 噪点 —— */
+  body::before{
+    content:"";
+    position:fixed;inset:0;
+    background:
+      radial-gradient(60% 50% at 15% 8%, rgba(34,211,238,.16), transparent 60%),
+      radial-gradient(55% 45% at 88% 18%, rgba(139,92,246,.18), transparent 60%),
+      radial-gradient(70% 60% at 75% 95%, rgba(251,191,36,.08), transparent 60%),
+      linear-gradient(180deg,#0A0F1C 0%, #090D18 100%);
+    z-index:-2;
+  }
+  body::after{
+    content:"";
+    position:fixed;inset:0;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    opacity:.5;
+    pointer-events:none;
+    z-index:-1;
+    mix-blend-mode:overlay;
+  }
+  .wrap{max-width:1240px;margin:0 auto;padding:0 40px}
+
+  /* —— 顶部导航 —— */
+  header{
+    position:fixed;top:0;left:0;right:0;z-index:50;
+    backdrop-filter:blur(14px);
+    background:rgba(10,15,28,.55);
+    border-bottom:1px solid var(--line);
+  }
+  .nav{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .brand{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:14px;letter-spacing:.08em}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--cyan);box-shadow:0 0 14px var(--cyan);animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+  .nav-links{display:flex;gap:28px;font-size:13px;color:var(--ink-dim)}
+  .nav-links a{color:inherit;text-decoration:none;transition:color .25s}
+  .nav-links a:hover{color:var(--cyan-soft)}
+  @media(max-width:760px){.nav-links{display:none}}
+
+  /* —— Hero —— */
+  .hero{position:relative;padding:170px 0 90px;overflow:hidden}
+  .hero-grid{
+    position:absolute;inset:0;
+    background-image:
+      linear-gradient(var(--line) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:64px 64px;
+    mask-image:radial-gradient(circle at 30% 30%, #000 0%, transparent 70%);
+    -webkit-mask-image:radial-gradient(circle at 30% 30%, #000 0%, transparent 70%);
+    opacity:.6;
+  }
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;
+    font-family:var(--mono);font-size:12px;letter-spacing:.2em;
+    color:var(--cyan-soft);text-transform:uppercase;
+    padding:8px 16px;border:1px solid rgba(94,234,212,.3);border-radius:100px;
+    background:rgba(94,234,212,.06);
+    margin-bottom:34px;
+  }
+  .eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--cyan-soft)}
+  h1.title{
+    font-family:var(--serif);font-weight:900;
+    font-size:clamp(54px,9vw,128px);
+    line-height:.95;letter-spacing:-.02em;
+    background:linear-gradient(180deg,#fff 0%, #9AA6BE 130%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    margin-bottom:8px;
+  }
+  h1.title .acc{
+    background:linear-gradient(110deg,var(--cyan) 0%, var(--cyan-soft) 50%, var(--gold) 120%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    font-style:italic;
+  }
+  .tagline{
+    font-family:var(--serif);font-weight:500;font-style:italic;
+    font-size:clamp(20px,2.6vw,30px);
+    color:var(--ink-dim);max-width:760px;margin:18px 0 44px;
+  }
+  .tagline b{color:var(--cyan-soft);font-weight:700;font-style:normal}
+  .hero-meta{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:54px}
+  .chip{
+    font-family:var(--mono);font-size:12px;color:var(--ink-dim);
+    padding:8px 14px;border:1px solid var(--line);border-radius:8px;
+    background:rgba(255,255,255,.02);
+  }
+  .chip b{color:var(--ink);font-weight:600}
+
+  /* 创意介绍三卡 */
+  .intro-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  .intro-card{background:var(--bg);padding:34px 30px;transition:background .3s}
+  .intro-card:hover{background:var(--bg-soft)}
+  .intro-card .num{font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:.15em;margin-bottom:18px}
+  .intro-card h3{font-family:var(--serif);font-size:21px;font-weight:700;margin-bottom:12px;color:var(--ink)}
+  .intro-card p{font-size:14.5px;color:var(--ink-dim);line-height:1.85}
+  .intro-card .label{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--gold);margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);width:100%}
+  @media(max-width:860px){.intro-grid{grid-template-columns:1fr}}
+
+  /* —— 通用章节 —— */
+  section{padding:110px 0;position:relative}
+  .sec-head{display:flex;align-items:baseline;gap:24px;margin-bottom:64px;flex-wrap:wrap}
+  .sec-no{font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.2em;border-left:2px solid var(--cyan);padding-left:14px}
+  .sec-title{font-family:var(--serif);font-weight:700;font-size:clamp(34px,5vw,58px);line-height:1.05;letter-spacing:-.01em}
+  .sec-title em{font-style:italic;color:var(--cyan-soft)}
+  .sec-sub{font-size:15px;color:var(--ink-dim);max-width:560px;margin-left:auto;text-align:right}
+  @media(max-width:760px){.sec-sub{text-align:left;margin-left:0;width:100%}}
+
+  /* —— 流水线 —— */
+  .pipeline{position:relative}
+  .pipe-track{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:0;
+    border:1px solid var(--line);border-radius:20px;overflow:hidden;
+    background:rgba(255,255,255,.015);
+  }
+  .pipe-step{position:relative;padding:40px 30px 36px;border-right:1px solid var(--line);overflow:hidden}
+  .pipe-step:last-child{border-right:none}
+  .pipe-step::after{
+    content:"";position:absolute;left:0;top:0;height:3px;width:100%;
+    background:linear-gradient(90deg,var(--cyan),var(--cyan-soft));
+    transform:scaleX(0);transform-origin:left;transition:transform .8s cubic-bezier(.2,.8,.2,1);
+  }
+  .pipe-step:nth-child(2)::after{background:linear-gradient(90deg,var(--violet),#c4b5fd)}
+  .pipe-step:nth-child(3)::after{background:linear-gradient(90deg,#f59e0b,var(--gold))}
+  .pipe-step:nth-child(4)::after{background:linear-gradient(90deg,#34d399,#6ee7b7)}
+  .pipeline.in .pipe-step::after{transform:scaleX(1)}
+  .pipeline.in .pipe-step:nth-child(2)::after{transition-delay:.18s}
+  .pipeline.in .pipe-step:nth-child(3)::after{transition-delay:.36s}
+  .pipeline.in .pipe-step:nth-child(4)::after{transition-delay:.54s}
+  .pipe-ico{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;margin-bottom:22px;background:rgba(255,255,255,.04);border:1px solid var(--line)}
+  .pipe-step h4{font-family:var(--serif);font-size:24px;font-weight:700;margin-bottom:4px}
+  .pipe-step .en{font-family:var(--mono);font-size:11px;color:var(--ink-faint);letter-spacing:.15em;margin-bottom:14px;text-transform:uppercase}
+  .pipe-step p{font-size:13.5px;color:var(--ink-dim);line-height:1.8}
+  .pipe-flow{height:2px;margin:48px 0;position:relative;background:var(--line);overflow:hidden}
+  .pipe-flow::before{content:"";position:absolute;inset:0;width:30%;background:linear-gradient(90deg,transparent,var(--cyan),transparent);animation:flow 3.2s linear infinite}
+  @keyframes flow{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}
+  @media(max-width:860px){.pipe-track{grid-template-columns:1fr}.pipe-step{border-right:none;border-bottom:1px solid var(--line)}}
+
+  /* —— 用户与痛点：对比布局 —— */
+  .duo{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+  @media(max-width:860px){.duo{grid-template-columns:1fr}}
+  .panel{border:1px solid var(--line);border-radius:18px;padding:38px;background:rgba(255,255,255,.015);position:relative;overflow:hidden}
+  .panel.dark{background:linear-gradient(160deg,rgba(139,92,246,.08),rgba(10,15,28,.4))}
+  .panel h3{font-family:var(--serif);font-size:26px;font-weight:700;margin-bottom:8px}
+  .panel .ph{font-family:var(--mono);font-size:11px;letter-spacing:.18em;color:var(--ink-faint);margin-bottom:26px;text-transform:uppercase}
+  .pain-item,.scene-item{display:flex;gap:16px;padding:18px 0;border-top:1px solid var(--line)}
+  .pain-item:first-of-type,.scene-item:first-of-type{border-top:none}
+  .pain-item .x{color:#f87171;font-family:var(--mono);font-size:13px;flex-shrink:0;width:18px}
+  .scene-item .v{color:var(--cyan-soft);font-family:var(--mono);font-size:13px;flex-shrink:0;width:18px}
+  .pain-item div,.scene-item div{font-size:14.5px;color:var(--ink-dim)}
+  .pain-item b,.scene-item b{color:var(--ink);font-weight:500}
+  .users-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+  .users-row .u{font-family:var(--mono);font-size:11.5px;padding:7px 13px;border:1px solid var(--line);border-radius:100px;color:var(--ink-dim);background:rgba(255,255,255,.02)}
+  .users-row .u.hl{color:var(--gold);border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)}
+
+  /* —— 价值 —— */
+  .value-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  @media(max-width:860px){.value-grid{grid-template-columns:1fr}}
+  .vcard{border:1px solid var(--line);border-radius:18px;padding:40px 32px;background:rgba(255,255,255,.015);transition:transform .4s,border-color .4s;position:relative;overflow:hidden}
+  .vcard:hover{transform:translateY(-6px);border-color:rgba(94,234,212,.35)}
+  .vcard .big{font-family:var(--serif);font-weight:900;font-size:64px;line-height:1;background:linear-gradient(180deg,var(--cyan-soft),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:18px}
+  .vcard:nth-child(2) .big{background:linear-gradient(180deg,#fcd34b,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .vcard:nth-child(3) .big{background:linear-gradient(180deg,#c4b5fd,var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .vcard h4{font-family:var(--serif);font-size:22px;margin-bottom:12px}
+  .vcard p{font-size:14px;color:var(--ink-dim);line-height:1.85}
+
+  /* —— 能力矩阵 —— */
+  .feat{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  @media(max-width:860px){.feat{grid-template-columns:1fr}}
+  .feat-item{background:var(--bg);padding:30px;display:flex;gap:20px;align-items:flex-start;transition:background .3s}
+  .feat-item:hover{background:var(--bg-soft)}
+  .feat-item .k{font-family:var(--mono);font-size:11px;color:var(--cyan);letter-spacing:.15em;width:42px;flex-shrink:0;padding-top:4px}
+  .feat-item h5{font-family:var(--serif);font-size:18px;font-weight:700;margin-bottom:6px}
+  .feat-item p{font-size:13.5px;color:var(--ink-dim);line-height:1.8}
+
+  /* —— 统计条 —— */
+  .statbar{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:48px 40px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(110deg,rgba(34,211,238,.05),rgba(139,92,246,.05));margin-top:40px}
+  @media(max-width:760px){.statbar{grid-template-columns:repeat(2,1fr)}}
+  .stat .n{font-family:var(--serif);font-weight:900;font-size:46px;color:var(--cyan-soft);line-height:1}
+  .stat .l{font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.12em;margin-top:8px;text-transform:uppercase}
+
+  /* —— CTA / Footer —— */
+  .cta{text-align:center;padding:120px 0 80px;border-top:1px solid var(--line)}
+  .cta h2{font-family:var(--serif);font-weight:900;font-size:clamp(40px,6vw,82px);line-height:1.05;letter-spacing:-.02em;margin-bottom:24px}
+  .cta h2 em{font-style:italic;background:linear-gradient(110deg,var(--cyan),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .cta p{font-size:17px;color:var(--ink-dim);max-width:640px;margin:0 auto 40px}
+  .cta-btn{display:inline-flex;align-items:center;gap:12px;font-family:var(--mono);font-size:14px;letter-spacing:.1em;padding:18px 34px;border-radius:100px;background:linear-gradient(110deg,var(--cyan),var(--cyan-soft));color:#062026;font-weight:600;text-decoration:none;transition:transform .3s,box-shadow .3s;box-shadow:0 12px 40px rgba(34,211,238,.3)}
+  .cta-btn:hover{transform:translateY(-3px);box-shadow:0 18px 50px rgba(34,211,238,.45)}
+  footer{padding:40px 0;border-top:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--ink-faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+
+  /* —— 入场动画 —— */
+  .reveal{opacity:0;transform:translateY(40px);transition:opacity .9s cubic-bezier(.2,.8,.2,1),transform .9s cubic-bezier(.2,.8,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  .d1{transition-delay:.1s}.d2{transition-delay:.22s}.d3{transition-delay:.34s}.d4{transition-delay:.46s}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand"><span class="dot"></span>ALI_ACA<span style="color:var(--ink-faint)">/创意方案</span></div>
+    <nav class="nav-links">
+      <a href="#intro">创意</a>
+      <a href="#pipeline">流水线</a>
+      <a href="#users">用户</a>
+      <a href="#value">价值</a>
+      <a href="#features">能力</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<div class="hero">
+  <div class="hero-grid"></div>
+  <div class="wrap">
+    <span class="eyebrow reveal">AIGC · AI 题库炼成系统</span>
+    <h1 class="title reveal d1">把题库<br><span class="acc">炼成</span>金子。</h1>
+    <p class="tagline reveal d2">拍图 → AI 识别题目 → 自动去重 → AI 答题解析 → <b>模拟考试 + 错题本</b>。让纸质截图，变成可检索、可练习、可量化的数字资产。</p>
+    <div class="hero-meta reveal d3">
+      <span class="chip">产品形态 · <b>Web 系统（前后端分离）</b></span>
+      <span class="chip">技术栈 · <b>FastAPI + React + SQLite</b></span>
+      <span class="chip">AI 引擎 · <b>GLM 视觉 + 文本双模型</b></span>
+    </div>
+
+    <!-- 创意介绍 -->
+    <div class="intro-grid reveal d4" id="intro">
+      <div class="intro-card">
+        <div class="num">01 / 想解决的问题</div>
+        <h3>题库困在截图里</h3>
+        <p>纸质和截图形式的认证题库无法检索、无法统计、重复刷题效率低下，且缺少标准答案解析与知识分类。</p>
+        <span class="label">// pain_point</span>
+      </div>
+      <div class="intro-card">
+        <div class="num">02 / 为什么想到做</div>
+        <h3>备考时的真实痛点</h3>
+        <p>备考大模型 / AIGC 认证时，手里只有成百上千张题目截图，手动整理耗时巨大，错题也无法系统化复习。</p>
+        <span class="label">// motivation</span>
+      </div>
+      <div class="intro-card">
+        <div class="num">03 / 大概是什么</div>
+        <h3>一条流水线搞定一切</h3>
+        <p>一个前后端分离的 Web 系统，把"拍图 → 识别 → 去重 → 答题"串成完整流水线，并配套模拟考试与错题本。</p>
+        <span class="label">// product_form</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 流水线 ============ -->
+<section id="pipeline">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="sec-no">SECTION 01</span>
+      <h2 class="sec-title">一条<em>流水线</em>，四步炼成</h2>
+      <p class="sec-sub">从一张图片到一道结构化题目，再到一份可练习的试卷。每一步都自动、并发、可熔断。</p>
+    </div>
+
+    <div class="pipeline reveal" id="pipeAnim">
+      <div class="pipe-track">
+        <div class="pipe-step">
+          <div class="pipe-ico">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5EEAD4" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+          </div>
+          <h4>扫描</h4>
+          <div class="en">scan</div>
+          <p>登记图片素材库，新增图片自动入库，状态置为待处理。</p>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-ico">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="1.8"><path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/></svg>
+          </div>
+          <h4>识别</h4>
+          <div class="en">extract</div>
+          <p>视觉模型并发读图，提取题干、选项、题型，结构化入库。</p>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-ico">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fcd34b" stroke-width="1.8"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="7" cy="6" r="1.5" fill="#fcd34b"/><circle cx="14" cy="12" r="1.5" fill="#fcd34b"/><circle cx="9" cy="18" r="1.5" fill="#fcd34b"/></svg>
+          </div>
+          <h4>去重</h4>
+          <div class="en">dedup</div>
+          <p>MD5 精确匹配 + 模糊相似度合并，重复题复用答案，省算力。</p>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-ico">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="1.8"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>
+          </div>
+          <h4>答题</h4>
+          <div class="en">answer</div>
+          <p>文本模型并发答题，输出答案、解析、知识分类与标签。</p>
+        </div>
+      </div>
+      <div class="pipe-flow"></div>
+      <div style="text-align:center;font-family:var(--mono);font-size:12px;color:var(--ink-faint);letter-spacing:.15em">→ 输出：结构化题库 · AI 解析 · 模拟考试 · 错题本</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 用户与痛点 ============ -->
+<section id="users">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="sec-no">SECTION 02</span>
+      <h2 class="sec-title">为谁而做，<em>痛在何处</em></h2>
+      <p class="sec-sub">没有它，你正困在截图相册与 Excel 里；有了它，一道题的命运从此不同。</p>
+    </div>
+
+    <div class="duo">
+      <div class="panel reveal">
+        <div class="ph">// target_users · 目标用户</div>
+        <h3>谁会用它</h3>
+        <div class="users-row">
+          <span class="u hl">认证备考学习者</span>
+          <span class="u">培训机构讲师</span>
+          <span class="u">题库运营人员</span>
+          <span class="u">企业内训负责人</span>
+        </div>
+        <div class="scene-item"><span class="v">▸</span><div><b>日常刷题整理：</b>把散落的题目截图一键结构化归档</div></div>
+        <div class="scene-item"><span class="v">▸</span><div><b>考前模拟：</b>加权抽题组卷，还原真实考试节奏</div></div>
+        <div class="scene-item"><span class="v">▸</span><div><b>错题复盘：</b>按错次排序，精准复习薄弱知识点</div></div>
+        <div class="scene-item"><span class="v">▸</span><div><b>题库分发：</b>按筛选条件一键导出 Word 题库</div></div>
+      </div>
+
+      <div class="panel dark reveal d2">
+        <div class="ph">// current_pain · 当前痛点</div>
+        <h3>没有它，你会怎样</h3>
+        <div class="pain-item"><span class="x">✕</span><div><b>无法检索：</b>题目困在截图相册里，想找一道题只能靠记忆翻图</div></div>
+        <div class="pain-item"><span class="x">✕</span><div><b>重复刷题：</b>同一道题反复出现，浪费宝贵的练习时间</div></div>
+        <div class="pain-item"><span class="x">✕</span><div><b>答案缺失：</b>没有标准答案与解析，做错也不知道为什么</div></div>
+        <div class="pain-item"><span class="x">✕</span><div><b>无法分类：</b>知识点零散，无法量化自己的掌握程度</div></div>
+        <div class="pain-item"><span class="x">✕</span><div><b>手工低效：</b>只能靠截图 + Excel 手工整理，耗时且易出错</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 价值 ============ -->
+<section id="value">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="sec-no">SECTION 03</span>
+      <h2 class="sec-title">价值与<em>意义</em></h2>
+      <p class="sec-sub">不只是把题录进电脑，而是重新定义"备考"这件事的效率与公平。</p>
+    </div>
+
+    <div class="value-grid">
+      <div class="vcard reveal">
+        <div class="big">90%+</div>
+        <h4>效率提升</h4>
+        <p>一条流水线把数百张图片自动结构化为可检索题库，AI 自动答题解析与知识分类，节省 90% 以上人工整理时间。</p>
+      </div>
+      <div class="vcard reveal d2">
+        <div class="big">商 业</div>
+        <h4>商业价值</h4>
+        <p>可服务认证培训机构、企业内训、在线教育平台，作为"题库数字化 + AI 解析"的标准化引擎，具备 SaaS 化潜力。</p>
+      </div>
+      <div class="vcard reveal d3">
+        <div class="big">社 会</div>
+        <h4>社会价值</h4>
+        <p>降低优质认证备考门槛，让知识获取更普惠；开放的知识分类体系（基础理论 / 提示词 / 实操 / 智能体）也能反哺 AI 通识教育。</p>
+      </div>
+    </div>
+
+    <div class="statbar reveal d2">
+      <div class="stat"><div class="n">4 步</div><div class="l">全自动流水线</div></div>
+      <div class="stat"><div class="n">2 模型</div><div class="l">视觉 + 文本协同</div></div>
+      <div class="stat"><div class="n">N 并发</div><div class="l">线程池 + 熔断保护</div></div>
+      <div class="stat"><div class="n">1 套</div><div class="l">题库 / 考试 / 错题</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 能力矩阵 ============ -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="sec-no">SECTION 04</span>
+      <h2 class="sec-title">核心<em>能力矩阵</em></h2>
+      <p class="sec-sub">从识别到复习，覆盖题库生命周期的每一个关键环节。</p>
+    </div>
+
+    <div class="feat reveal">
+      <div class="feat-item"><span class="k">K01</span><div><h5>视觉识别，结构化录入</h5><p>支持单选/多选，A~F 选项自动提取，JSON 容错解析与代码围栏清理。</p></div></div>
+      <div class="feat-item"><span class="k">K02</span><div><h5>两阶段智能去重</h5><p>MD5 精确匹配 + 编辑距离模糊合并，重复题自动复用主题答案。</p></div></div>
+      <div class="feat-item"><span class="k">K03</span><div><h5>AI 答题 + 知识分类</h5><p>自动输出答案、解析、分类与标签，答案正确性智能比对。</p></div></div>
+      <div class="feat-item"><span class="k">K04</span><div><h5>加权随机模拟考试</h5><p>权重随抽中次数指数衰减，让每道题都有机会出现，避免高频重复。</p></div></div>
+      <div class="feat-item"><span class="k">K05</span><div><h5>错题本 + 覆盖率分析</h5><p>按错次排序复习，可视化题目被抽中分布，量化掌握程度。</p></div></div>
+      <div class="feat-item"><span class="k">K06</span><div><h5>答案审核工作流</h5><p>支持重答、采纳历史版本、手动编辑，每次变更都留痕可追溯。</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CTA ============ -->
+<div class="cta">
+  <div class="wrap">
+    <h2 class="reveal">让每一道题，<br>都<em>物尽其用</em>。</h2>
+    <p class="reveal d2">ALI_ACA —— 把纸质截图炼成可检索、可练习、可量化的数字题库。<br>这是属于 AI 时代的备考方式。</p>
+    <a href="#intro" class="cta-btn reveal d3">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+      回到顶部，重新认识它
+    </a>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap" style="display:flex;justify-content:space-between;width:100%;flex-wrap:wrap;gap:12px">
+    <span>ALI_ACA · AI 题库炼成系统 · 创意方案展示</span>
+    <span>拍图 → 识别 → 去重 → 答题 → 模拟考试 + 错题本</span>
+  </div>
+</footer>
+
+<script>
+  // 滚动入场动画
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.15 });
+  document.querySelectorAll('.reveal, #pipeAnim').forEach(el => io.observe(el));
+
+  // 导航高亮 + 平滑滚动
+  document.querySelectorAll('.nav-links a').forEach(a => {
+    a.addEventListener('click', (e) => {
+      const id = a.getAttribute('href');
+      if (id.startsWith('#')) {
+        e.preventDefault();
+        document.querySelector(id)?.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+</script>
+</body>
+</html>

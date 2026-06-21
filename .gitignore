@@ -1,0 +1,108 @@
+# ============================================================
+# ALI_ACA .gitignore
+# ============================================================
+
+# -------- 敏感信息：API Token / 密钥 --------
+# 真实密钥一律不提交，仅保留模板
+backend/.env
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# -------- 个人数据：数据库 / 日志 --------
+# SQLite 题库、错题、考试记录等本地数据
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+data/
+backend/logs/
+*.log
+
+# -------- 测试图片集：仅保留前 10 张样本 --------
+# 注意：不能直接 ignore image/ 目录，否则无法用 ! 重新包含
+image/*.PNG
+image/*.png
+image/*.jpg
+image/*.jpeg
+image/*.JPG
+image/*.JPEG
+image/*.webp
+image/*.bmp
+image/*.gif
+# —— 保留的 10 张样本（如需更换，编辑下方列表即可）——
+!image/IMG_1724.PNG
+!image/IMG_1725.PNG
+!image/IMG_1726.PNG
+!image/IMG_1727.PNG
+!image/IMG_1728.PNG
+!image/IMG_1729.PNG
+!image/IMG_1730.PNG
+!image/IMG_1731.PNG
+!image/IMG_1734.PNG
+!image/IMG_1735.PNG
+
+# -------- Python 运行时 --------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+backend/.venv/
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# -------- Node / 前端运行时 --------
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.pnp
+.pnp.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# -------- 构建产物 / 缓存 --------
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.cover
+
+# -------- IDE / 编辑器 --------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# -------- 操作系统 --------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# -------- 临时文件 --------
+*.tmp
+*.temp
+*.bak
+*.orig
