@@ -45,6 +45,79 @@ def _get_pick_decay(db: Session) -> float:
     return val
 
 
+# ===== 考试进度恢复辅助 =====
+def _is_overdue(record: ExamRecord) -> bool:
+    """考试是否已超时（超过考试时长）"""
+    if not record.started_at:
+        return True
+    elapsed = (datetime.utcnow() - record.started_at).total_seconds()
+    return elapsed >= EXAM_DURATION_MINUTES * 60
+
+
+def _remaining_seconds(record: ExamRecord) -> int:
+    """考试剩余秒数（最小为 0）"""
+    if not record.started_at:
+        return 0
+    elapsed = (datetime.utcnow() - record.started_at).total_seconds()
+    remain = EXAM_DURATION_MINUTES * 60 - elapsed
+    return int(max(0, remain))
+
+
+def _get_active_record(db: Session) -> Optional[ExamRecord]:
+    """获取进行中且未超时的考试记录（submitted_at 与 abandoned_at 均为空）"""
+    return (
+        db.query(ExamRecord)
+        .filter(ExamRecord.submitted_at.is_(None), ExamRecord.abandoned_at.is_(None))
+        .order_by(ExamRecord.id.desc())
+        .first()
+    )
+
+
+def _expire_overdue_active(db: Session) -> None:
+    """将所有进行中但已超时的考试标记为已作废（超时放弃）"""
+    overdue = (
+        db.query(ExamRecord)
+        .filter(ExamRecord.submitted_at.is_(None), ExamRecord.abandoned_at.is_(None))
+        .all()
+    )
+    now = datetime.utcnow()
+    changed = False
+    for r in overdue:
+        if _is_overdue(r):
+            r.abandoned_at = now
+            changed = True
+    if changed:
+        db.commit()
+
+
+def _build_exam_questions(record: ExamRecord, db: Session):
+    """构建考试题目列表（不含正确答案），按原抽题顺序返回"""
+    question_ids = record.question_ids or []
+    questions = db.query(Question).filter(Question.id.in_(question_ids)).all()
+    q_map = {q.id: q for q in questions}
+    exam_questions = []
+    for idx, qid in enumerate(question_ids, 1):
+        q = q_map.get(qid)
+        if not q:
+            continue
+        exam_questions.append({
+            "index": idx,
+            "id": q.id,
+            "question_type": q.question_type,
+            "question_text": q.question_text,
+            "options": q.options,
+        })
+    return exam_questions
+
+
+def _saved_answers_map(record: ExamRecord) -> dict:
+    """从已保存进度中恢复答案 {question_id: answer}"""
+    saved = record.answers or []
+    if isinstance(saved, list):
+        return {item["question_id"]: item.get("answer", "") for item in saved if isinstance(item, dict)}
+    return {}
+
+
 class ExamSubmitAnswer(BaseModel):
     question_id: int
     answer: str
@@ -99,6 +172,21 @@ def update_exam_config(payload: ExamConfigUpdate, db: Session = Depends(get_db))
 @router.get("/exam/generate")
 def generate_exam(db: Session = Depends(get_db)):
     """随机生成一套考试题：35单选 + 15多选，使用加权随机降低高频题目被选中概率"""
+    # 先把超时但未提交的进行中考试作废
+    _expire_overdue_active(db)
+    # 若仍有进行中且未超时的考试，禁止新建考试，需先完成或放弃现有考试
+    active = _get_active_record(db)
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "您有未完成的考试，请先完成或放弃后再开始新考试",
+                "active_exam_id": active.id,
+                "remaining_seconds": _remaining_seconds(active),
+                "started_at": (active.started_at.isoformat() + "Z") if active.started_at else None,
+            },
+        )
+
     # 取所有非重复、有标准答案的题目
     single_qs = (
         db.query(Question)
@@ -222,6 +310,66 @@ def generate_exam(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/exam/active")
+def get_active_exam(db: Session = Depends(get_db)):
+    """获取进行中且未超时的考试，用于恢复未完成的考试"""
+    # 先作废已超时的进行中考试
+    _expire_overdue_active(db)
+    active = _get_active_record(db)
+    if not active:
+        return {"active": False}
+
+    return {
+        "active": True,
+        "exam_id": active.id,
+        "started_at": (active.started_at.isoformat() + "Z") if active.started_at else None,
+        "remaining_seconds": _remaining_seconds(active),
+        "duration_minutes": EXAM_DURATION_MINUTES,
+        "pass_score": PASS_SCORE,
+        "full_score": FULL_SCORE,
+        "total_questions": active.total_questions,
+        "questions": _build_exam_questions(active, db),
+        "saved_answers": _saved_answers_map(active),
+    }
+
+
+class ExamSaveRequest(BaseModel):
+    answers: list[ExamSubmitAnswer]
+
+
+@router.post("/exam/{exam_id}/save")
+def save_exam_progress(exam_id: int, payload: ExamSaveRequest, db: Session = Depends(get_db)):
+    """保存考试答题进度，便于退出后恢复"""
+    record = db.query(ExamRecord).filter(ExamRecord.id == exam_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="考试记录不存在")
+    if record.submitted_at:
+        raise HTTPException(status_code=400, detail="该考试已提交，无法保存进度")
+    if record.abandoned_at:
+        raise HTTPException(status_code=400, detail="该考试已放弃，无法保存进度")
+    if _is_overdue(record):
+        record.abandoned_at = datetime.utcnow()
+        db.commit()
+        raise HTTPException(status_code=400, detail="考试已超时，无法继续作答")
+
+    record.answers = [{"question_id": a.question_id, "answer": a.answer} for a in payload.answers]
+    db.commit()
+    return {"ok": True, "saved_at": datetime.utcnow().isoformat() + "Z"}
+
+
+@router.post("/exam/{exam_id}/abandon")
+def abandon_exam(exam_id: int, db: Session = Depends(get_db)):
+    """放弃未完成的考试，释放阻塞（之后可开始新考试）"""
+    record = db.query(ExamRecord).filter(ExamRecord.id == exam_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="考试记录不存在")
+    if record.submitted_at:
+        raise HTTPException(status_code=400, detail="该考试已提交，无法放弃")
+    record.abandoned_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/exam/{exam_id}/submit")
 def submit_exam(exam_id: int, payload: ExamSubmitRequest, db: Session = Depends(get_db)):
     """提交考试，打分并记录错题"""
@@ -231,6 +379,8 @@ def submit_exam(exam_id: int, payload: ExamSubmitRequest, db: Session = Depends(
 
     if record.submitted_at:
         raise HTTPException(status_code=400, detail="该考试已提交")
+    if record.abandoned_at:
+        raise HTTPException(status_code=400, detail="该考试已放弃，无法提交")
 
     # 取题目和标准答案
     question_ids = record.question_ids or []
@@ -273,12 +423,15 @@ def submit_exam(exam_id: int, payload: ExamSubmitRequest, db: Session = Depends(
     record.wrong_count = wrong_count
     record.score = score
     record.passed = passed
-    if payload.started_at:
+    # 优先用后端记录的真实开始时间计算用时；前端传入的 started_at 仅作兜底
+    start = record.started_at
+    if start is None and payload.started_at:
         try:
             start = datetime.fromisoformat(payload.started_at.replace("Z", ""))
-            record.duration_seconds = int((now - start).total_seconds())
         except Exception:
-            pass
+            start = None
+    if start:
+        record.duration_seconds = int((now - start).total_seconds())
     record.answers = [{"question_id": a.question_id, "answer": a.answer} for a in payload.answers]
 
     # 记录错题到错题本
@@ -347,7 +500,9 @@ def exam_history(
     db: Session = Depends(get_db),
 ):
     """考试历史记录（支持按是否通过筛选）"""
-    query = db.query(ExamRecord)
+    # 历史记录只展示已提交的考试（进行中 / 已放弃的不计入）
+    base_filter = ExamRecord.submitted_at.isnot(None)
+    query = db.query(ExamRecord).filter(base_filter)
     if passed is not None:
         query = query.filter(ExamRecord.passed == passed)
     total = query.count()
@@ -358,8 +513,8 @@ def exam_history(
         .all()
     )
 
-    # 全局统计
-    all_records = db.query(ExamRecord).all()
+    # 全局统计（仅已提交）
+    all_records = db.query(ExamRecord).filter(base_filter).all()
     stats = {
         "total": len(all_records),
         "passed": sum(1 for r in all_records if r.passed),
@@ -476,6 +631,12 @@ def list_wrong_questions(
                     "correct_answer": w.question.correct_answer,
                     "category": w.question.category,
                     "subcategory": w.question.subcategory,
+                    # AI 答题信息：用于在错题本中对比 AI 答案与标准答案、展示 AI 解析
+                    "ai_answer": w.question.answer.answer if w.question.answer else None,
+                    "ai_explanation": w.question.answer.explanation if w.question.answer else None,
+                    "ai_is_correct": w.question.answer.is_correct if w.question.answer else None,
+                    "ai_model": w.question.answer.model if w.question.answer else None,
+                    "ai_review_status": w.question.answer.review_status if w.question.answer else None,
                 } if w.question else None,
             }
             for w in items
@@ -568,7 +729,7 @@ def exam_coverage(
             distribution[s.pick_count] = distribution.get(s.pick_count, 0) + 1
 
     # 列表查询：支持按 status / question_type 筛选
-    list_q = db.query(Question).filter(Question.is_duplicate == False)
+    list_q = db.query(Question).filter(Question.is_duplicate == False).options(joinedload(Question.answer))
     if question_type:
         list_q = list_q.filter(Question.question_type == question_type)
     if status == "appeared":
@@ -603,16 +764,26 @@ def exam_coverage(
     items = []
     for q in questions:
         s = stats_map.get(q.id)
+        a = q.answer
         items.append({
             "id": q.id,
             "question_type": q.question_type,
             "question_text": (q.question_text or "")[:120],
+            # 完整信息用于明细弹窗
+            "full_text": q.question_text or "",
+            "options": q.options,
+            "correct_answer": q.correct_answer,
             "category": q.category,
             "subcategory": q.subcategory,
             "pick_count": s.pick_count if s else 0,
             "wrong_count": s.wrong_count if s else 0,
             "last_picked_at": (s.last_picked_at.isoformat() + "Z") if (s and s.last_picked_at) else None,
             "appeared": (s.pick_count > 0) if s else False,
+            # AI 答题信息
+            "ai_answer": a.answer if a else None,
+            "ai_explanation": a.explanation if a else None,
+            "ai_is_correct": a.is_correct if a else None,
+            "ai_model": a.model if a else None,
         })
 
     return {

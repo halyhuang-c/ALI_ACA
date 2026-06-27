@@ -80,6 +80,18 @@ def get(step: str) -> List[dict]:
         return list(bucket)
 
 
+def start_new_batch(step: str, batch_title: str = "") -> None:
+    """开始一个新批次：不删除历史日志，仅追加一条醒目的分隔标记行。
+
+    保留历史日志累积保留，前端可回看所有批次的处理记录。
+    """
+    step = (step or "").strip() or "unknown"
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    title = batch_title or "新批次"
+    msg = f"========== {title} {now} =========="
+    append(step, msg, level="info")
+
+
 def clear(step: Optional[str] = None) -> None:
     with _lock:
         if step is None:

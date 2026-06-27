@@ -87,7 +87,7 @@ def answer_all(db: Session, status_feed: Optional[Callable[[dict], None]] = None
     already_answered = db.query(Question).join(Answer, Answer.question_id == Question.id).count()
 
     pipeline_service.update_step(db, STEP_ANSWER, status="running", total=total_all, current=already_answered)
-    log_store.clear(STEP_ANSWER)
+    log_store.start_new_batch(STEP_ANSWER, "答题解析批次")
     config_name = llm_config.name if llm_config else "未配置"
     log_store.append(
         STEP_ANSWER,

@@ -151,6 +151,8 @@ class ExamRecord(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     submitted_at = Column(DateTime, nullable=True)
+    # 放弃时间：用户主动放弃或考试超时自动作废时写入；为空且 submitted_at 为空表示进行中可恢复
+    abandoned_at = Column(DateTime, nullable=True)
     total_questions = Column(Integer, nullable=False)
     correct_count = Column(Integer, default=0, nullable=False)
     wrong_count = Column(Integer, default=0, nullable=False)

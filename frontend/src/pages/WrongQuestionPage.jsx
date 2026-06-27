@@ -14,6 +14,7 @@ import {
   Empty,
   Popconfirm,
   Tooltip,
+  Collapse,
   message,
 } from 'antd'
 import {
@@ -23,6 +24,7 @@ import {
   EyeOutlined,
   ReloadOutlined,
   BookOutlined,
+  RobotOutlined,
 } from '@ant-design/icons'
 import {
   getWrongQuestions,
@@ -308,6 +310,16 @@ export default function WrongQuestionPage() {
                 <Space size={8} wrap>
                   <Tag color="red">你的答案：{w.user_answer || '（未作答）'}</Tag>
                   <Tag color="green">正确答案：{w.correct_answer || '（无）'}</Tag>
+                  {q.ai_answer ? (
+                    <Tag color={q.ai_is_correct === true ? 'geekblue' : q.ai_is_correct === false ? 'purple' : 'default'}>
+                      <RobotOutlined /> AI答案：{q.ai_answer}
+                      {q.ai_is_correct !== null && q.ai_is_correct !== undefined ? (
+                        q.ai_is_correct ? '（与标准答案一致）' : '（与标准答案不一致）'
+                      ) : null}
+                    </Tag>
+                  ) : (
+                    <Tag color="default"><RobotOutlined /> 暂无AI答案</Tag>
+                  )}
                 </Space>
 
                 {q.correct_answer && q.correct_answer !== w.correct_answer ? (
@@ -315,6 +327,35 @@ export default function WrongQuestionPage() {
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       最新正确答案：{q.correct_answer}
                     </Text>
+                  </div>
+                ) : null}
+
+                {/* AI 分析结果（可展开） */}
+                {q.ai_explanation ? (
+                  <div style={{ marginTop: 12 }}>
+                    <Collapse
+                      size="small"
+                      items={[{
+                        key: 'ai-analysis',
+                        label: (
+                          <Space size={4}>
+                            <RobotOutlined style={{ color: '#1677ff' }} />
+                            <Text strong style={{ fontSize: 13 }}>AI 题目分析</Text>
+                            {q.ai_model ? (
+                              <Tag color="blue" style={{ fontSize: 11 }}>{q.ai_model}</Tag>
+                            ) : null}
+                            {q.ai_review_status ? (
+                              <Tag style={{ fontSize: 11 }}>{q.ai_review_status}</Tag>
+                            ) : null}
+                          </Space>
+                        ),
+                        children: (
+                          <Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 13 }}>
+                            {q.ai_explanation}
+                          </Paragraph>
+                        ),
+                      }]}
+                    />
                   </div>
                 ) : null}
               </Card>

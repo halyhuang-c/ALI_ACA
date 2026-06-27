@@ -816,17 +816,31 @@ function PipelinePage() {
               />
             </div>
           ) : (
-            logs.map((ln, i) => (
-              <div
-                key={i}
-                style={{
-                  color: ln.level === 'error' ? '#ff6b6b' : ln.level === 'warn' ? '#ffd43b' : '#d4d4d4',
-                }}
-              >
-                <span style={{ color: '#858585' }}>{ln.ts}</span>{' '}
-                {ln.msg}
-              </div>
-            ))
+            logs.map((ln, i) => {
+              const isBatch = String(ln.msg || '').startsWith('==========')
+              return (
+                <div
+                  key={i}
+                  style={
+                    isBatch
+                      ? {
+                          color: '#69b1ff',
+                          borderTop: '1px dashed #3a3a3a',
+                          borderBottom: '1px dashed #3a3a3a',
+                          padding: '4px 0',
+                          margin: '6px 0',
+                          fontWeight: 600,
+                        }
+                      : {
+                          color: ln.level === 'error' ? '#ff6b6b' : ln.level === 'warn' ? '#ffd43b' : '#d4d4d4',
+                        }
+                  }
+                >
+                  <span style={{ color: '#858585' }}>{ln.ts}</span>{' '}
+                  {ln.msg}
+                </div>
+              )
+            })
           )}
         </div>
       </Drawer>

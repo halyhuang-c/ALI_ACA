@@ -24,7 +24,7 @@ def extract_all(db: Session, status_feed: Optional[Callable[[dict], None]] = Non
     total_all = already_processed + already_failed + len(pending_images)
     this_total = len(pending_images)
     pipeline_service.update_step(db, STEP_EXTRACT, status="running", total=total_all, current=already_processed)
-    log_store.clear(STEP_EXTRACT)
+    log_store.start_new_batch(STEP_EXTRACT, "识别题目批次")
     config_name = llm_config.name if llm_config else "未配置"
     log_store.append(STEP_EXTRACT, f"开始识别题目：本次待处理 {this_total} 张（已成功 {already_processed}，已失败 {already_failed}）")
     log_store.append(STEP_EXTRACT, f"使用配置：[{config_name}] 模型：{model or '未配置'}")

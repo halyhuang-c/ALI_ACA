@@ -29,7 +29,16 @@ import {
   SlidersOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { generateExam, submitExam, getExamHistory, getExamConfig, updateExamConfig } from '../api'
+import {
+  generateExam,
+  submitExam,
+  getExamHistory,
+  getExamConfig,
+  updateExamConfig,
+  getActiveExam,
+  saveExamProgress,
+  abandonExam,
+} from '../api'
 
 const { Text, Title, Paragraph } = Typography
 
@@ -56,8 +65,13 @@ export default function ExamPage() {
   const [decayRange, setDecayRange] = useState({ min: 0.05, max: 0.5 })
   const [decayDefault, setDecayDefault] = useState(0.2)
   const [savingDecay, setSavingDecay] = useState(false)
+  const [activeResume, setActiveResume] = useState(null) // 未完成考试数据，用于显示恢复弹窗
+  const [autoSaving, setAutoSaving] = useState(false)
   const timerRef = useRef(null)
   const startTimeRef = useRef(null)
+  const answersRef = useRef({})
+  const examDataRef = useRef(null)
+  const saveTimerRef = useRef(null)
 
   const loadHistory = useCallback(async () => {
     try {
@@ -117,6 +131,95 @@ export default function ExamPage() {
     loadHistory()
   }, [loadHistory])
 
+  // 同步最新答案/考试数据到 ref，供自动保存读取，避免闭包陈旧
+  useEffect(() => { answersRef.current = answers }, [answers])
+  useEffect(() => { examDataRef.current = examData }, [examData])
+
+  // 进入页面时检测是否有未完成的考试
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await getActiveExam()
+        if (!cancelled && res?.active) setActiveResume(res)
+      } catch (e) {}
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  const doSaveProgress = useCallback(async (silent = false) => {
+    const ed = examDataRef.current
+    if (!ed) return
+    const ans = answersRef.current
+    const answerList = ed.questions.map((q) => ({
+      question_id: q.id,
+      answer: ans[q.id] || '',
+    }))
+    if (silent) setAutoSaving(true)
+    try {
+      await saveExamProgress(ed.exam_id, answerList)
+      if (!silent) message.success('进度已保存，可稍后继续')
+    } catch (e) {
+      const detail = e?.response?.data?.detail
+      if (!silent) message.error(detail || '保存失败')
+    } finally {
+      if (silent) setAutoSaving(false)
+    }
+  }, [])
+
+  // 答题过程中自动保存（答题后 3 秒无新操作）
+  useEffect(() => {
+    if (phase !== 'exam' || !examData) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => doSaveProgress(true), 3000)
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    }
+  }, [phase, answers, examData, doSaveProgress])
+
+  const resumeExam = () => {
+    const data = activeResume
+    if (!data) return
+    setExamData({
+      exam_id: data.exam_id,
+      questions: data.questions,
+      duration_minutes: data.duration_minutes,
+      pass_score: data.pass_score,
+      full_score: data.full_score,
+      total_questions: data.total_questions,
+    })
+    setAnswers(data.saved_answers || {})
+    setCurrentIdx(0)
+    setTimeLeft(data.remaining_seconds || 0)
+    startTimeRef.current = data.started_at
+    setResult(null)
+    setActiveResume(null)
+    setPhase('exam')
+  }
+
+  const discardActiveExam = async () => {
+    if (activeResume?.exam_id) {
+      try { await abandonExam(activeResume.exam_id) } catch (e) {}
+    }
+    setActiveResume(null)
+    loadHistory()
+  }
+
+  const resetExamState = () => {
+    setPhase('idle')
+    setExamData(null)
+    setAnswers({})
+    setResult(null)
+    setCurrentIdx(0)
+    setTimeLeft(EXAM_DURATION)
+  }
+
+  const saveAndExit = async () => {
+    await doSaveProgress(true)
+    message.success('进度已保存，可稍后继续')
+    resetExamState()
+  }
+
   // 倒计时
   useEffect(() => {
     if (phase !== 'exam') return
@@ -150,8 +253,19 @@ export default function ExamPage() {
       startTimeRef.current = new Date().toISOString()
       setPhase('exam')
     } catch (e) {
-      message.error(e?.response?.data?.detail || '生成考试失败')
-      setPhase('idle')
+      const status = e?.response?.status
+      const detail = e?.response?.data?.detail
+      if (status === 409 && detail?.active_exam_id) {
+        message.warning(detail.message || '您有未完成的考试')
+        try {
+          const active = await getActiveExam()
+          if (active?.active) setActiveResume(active)
+        } catch (e2) {}
+        setPhase('idle')
+      } else {
+        message.error(detail?.message || detail || '生成考试失败')
+        setPhase('idle')
+      }
     }
   }
 
@@ -197,10 +311,24 @@ export default function ExamPage() {
   }
 
   const exitExam = () => {
-    setPhase('idle')
-    setExamData(null)
-    setAnswers({})
-    setResult(null)
+    if (!examData?.exam_id) {
+      resetExamState()
+      return
+    }
+    Modal.confirm({
+      title: '放弃考试',
+      content: '放弃后本次考试将作废，无法恢复，之后可开始新考试。确定放弃吗？',
+      okText: '放弃考试',
+      okType: 'danger',
+      cancelText: '继续答题',
+      onOk: async () => {
+        try {
+          await abandonExam(examData.exam_id)
+        } catch (e) {}
+        resetExamState()
+        loadHistory()
+      },
+    })
   }
 
   // ===== 考试中 =====
@@ -227,6 +355,10 @@ export default function ExamPage() {
             </Space>
             <Space>
               <Text type="secondary">已答 {answeredCount}/{questions.length}</Text>
+              {autoSaving ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>保存中…</Text>
+              ) : null}
+              <Button size="small" onClick={saveAndExit}>保存退出</Button>
               <Button size="small" danger onClick={exitExam}>放弃</Button>
             </Space>
           </div>
@@ -534,16 +666,19 @@ export default function ExamPage() {
               <Card size="small" style={{ background: '#fafafa' }}>
                 <Space direction="vertical" size={2} style={{ width: '100%' }}>
                   <Text style={{ fontSize: 12 }}>
-                    <Tag color="cyan">从未出现</Tag> 权重 1.0
+                    <Tag color="cyan">从未出现</Tag> 权重 1.00000
                   </Text>
                   <Text style={{ fontSize: 12 }}>
-                    <Tag color="orange">出现 1 次</Tag> 权重 {Math.pow(pickDecay, 1).toFixed(3)}（未出现的 1/{Math.round(1 / pickDecay)}）
+                    <Tag color="orange">出现 1 次</Tag> 权重 {Math.pow(pickDecay, 1).toFixed(5)}（未出现的 1/{Math.round(1 / Math.pow(pickDecay, 1))}）
                   </Text>
                   <Text style={{ fontSize: 12 }}>
-                    <Tag color="volcano">出现 2 次</Tag> 权重 {Math.pow(pickDecay, 2).toFixed(3)}（未出现的 1/{Math.round(1 / (pickDecay * pickDecay))}）
+                    <Tag color="volcano">出现 2 次</Tag> 权重 {Math.pow(pickDecay, 2).toFixed(5)}（未出现的 1/{Math.round(1 / Math.pow(pickDecay, 2))}）
                   </Text>
                   <Text style={{ fontSize: 12 }}>
-                    <Tag color="red">出现 3 次</Tag> 权重 {Math.pow(pickDecay, 3).toFixed(3)}
+                    <Tag color="red">出现 3 次</Tag> 权重 {Math.pow(pickDecay, 3).toFixed(5)}（未出现的 1/{Math.round(1 / Math.pow(pickDecay, 3))}）
+                  </Text>
+                  <Text style={{ fontSize: 12 }}>
+                    <Tag color="magenta">出现 4 次</Tag> 权重 {Math.pow(pickDecay, 4).toFixed(5)}（未出现的 1/{Math.round(1 / Math.pow(pickDecay, 4))}）
                   </Text>
                 </Space>
               </Card>
@@ -606,6 +741,28 @@ export default function ExamPage() {
           ) : null}
         </Space>
       </Card>
+
+      <Modal
+        open={!!activeResume}
+        title="发现未完成的考试"
+        okText="继续考试"
+        cancelText="放弃考试"
+        closable={false}
+        maskClosable={false}
+        onOk={resumeExam}
+        onCancel={discardActiveExam}
+      >
+        <Space direction="vertical" size={6}>
+          <Text>检测到您有一场尚未完成的模拟考试：</Text>
+          <Text type="secondary">
+            开始时间：{activeResume?.started_at ? new Date(activeResume.started_at).toLocaleString('zh-CN') : '-'}
+          </Text>
+          <Text type="secondary">
+            剩余时间：{formatTime(activeResume?.remaining_seconds || 0)}
+          </Text>
+          <Text type="warning">选择「继续考试」恢复作答；选择「放弃考试」将作废该考试并允许开始新考试。</Text>
+        </Space>
+      </Modal>
     </Spin>
   )
 }

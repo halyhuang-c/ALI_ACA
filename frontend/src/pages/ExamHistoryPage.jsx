@@ -33,6 +33,102 @@ function formatTime(seconds) {
   return `${m}分${s}秒`
 }
 
+// 纯 SVG 分数走势图（无第三方图表依赖）
+function ScoreTrendChart({ items, passScore = 80 }) {
+  const W = 820
+  const H = 150
+  const padL = 44, padR = 24, padT = 20, padB = 32
+  const plotW = W - padL - padR
+  const plotH = H - padT - padB
+  const yMax = 100
+
+  if (!items.length) return <Empty description="暂无考试数据" />
+
+  const n = items.length
+  const xStep = n > 1 ? plotW / (n - 1) : 0
+  const pts = items.map((it, i) => ({
+    x: padL + i * xStep,
+    y: padT + plotH - ((it.score || 0) / yMax) * plotH,
+    ...it,
+  }))
+  const pathD = pts
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+    .join(' ')
+  const passY = padT + plotH - (passScore / yMax) * plotH
+  const yTicks = [0, 20, 40, 60, 80, 100]
+  const showAllLabels = n <= 20
+  const xLabelStep = Math.ceil(n / 12)
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }}>
+        {/* y 刻度网格线 + 标签 */}
+        {yTicks.map((t) => {
+          const y = padT + plotH - (t / yMax) * plotH
+          return (
+            <g key={t}>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f0f0f0" strokeWidth={1} />
+              <text x={padL - 8} y={y + 4} textAnchor="end" fontSize={11} fill="#999">{t}</text>
+            </g>
+          )
+        })}
+        {/* 合格基准线 */}
+        <line
+          x1={padL} y1={passY} x2={W - padR} y2={passY}
+          stroke="#fa8c16" strokeWidth={1.5} strokeDasharray="6 4"
+        />
+        {/* 分数折线 */}
+        <path d={pathD} fill="none" stroke="#1677ff" strokeWidth={2} />
+        {/* 分数点 */}
+        {pts.map((p, i) => (
+          <g key={i}>
+            <circle
+              cx={p.x} cy={p.y} r={4}
+              fill={p.passed ? '#52c41a' : '#ff4d4f'}
+              stroke="#fff" strokeWidth={1.5}
+            >
+              <title>{`第 ${i + 1} 次\n分数：${p.score}\n${p.submitted_at ? new Date(p.submitted_at).toLocaleString('zh-CN') : ''}\n正确：${p.correct_count}/${p.total_questions}`}</title>
+            </circle>
+            {showAllLabels ? (
+              <text x={p.x} y={p.y - 10} textAnchor="middle" fontSize={10} fill={p.passed ? '#52c41a' : '#ff4d4f'}>
+                {p.score}
+              </text>
+            ) : null}
+          </g>
+        ))}
+        {/* x 轴序号标签 */}
+        {pts.map((p, i) => {
+          if (!showAllLabels && i % xLabelStep !== 0 && i !== n - 1) return null
+          return (
+            <text key={i} x={p.x} y={H - padB + 14} textAnchor="middle" fontSize={10} fill="#999">
+              {i + 1}
+            </text>
+          )
+        })}
+      </svg>
+      {/* 图例（放在图表下方） */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 4 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+          <span style={{ display: 'inline-block', width: 18, height: 0, borderTop: '2px dashed #fa8c16' }} />
+          <span style={{ color: '#fa8c16' }}>合格线 {passScore} 分</span>
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#52c41a', border: '1.5px solid #fff' }} />
+          <span style={{ color: '#52c41a' }}>合格</span>
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ff4d4f', border: '1.5px solid #fff' }} />
+          <span style={{ color: '#ff4d4f' }}>未通过</span>
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+          <span style={{ display: 'inline-block', width: 18, height: 2, background: '#1677ff' }} />
+          <span style={{ color: '#1677ff' }}>分数走势</span>
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export default function ExamHistoryPage() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
@@ -42,6 +138,14 @@ export default function ExamHistoryPage() {
   const [pageSize] = useState(20)
   const [passedFilter, setPassedFilter] = useState(undefined)
   const [stats, setStats] = useState({ total: 0, passed: 0, avg_score: 0, best_score: 0 })
+  const [chartItems, setChartItems] = useState([])
+
+  const loadChartData = useCallback(async () => {
+    try {
+      const res = await getExamHistory(1, 500)
+      setChartItems([...(res?.items || [])].reverse())
+    } catch (e) {}
+  }, [])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -60,6 +164,10 @@ export default function ExamHistoryPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    loadChartData()
+  }, [loadChartData])
 
   const handleFilterChange = (v) => {
     setPassedFilter(v)
@@ -196,6 +304,20 @@ export default function ExamHistoryPage() {
             </Card>
           </Col>
         </Row>
+      </Card>
+
+      {/* 分数走势图 */}
+      <Card
+        size="small"
+        title={
+          <Space>
+            <ThunderboltOutlined />
+            <Text strong>分数走势</Text>
+          </Space>
+        }
+        style={{ marginBottom: 12 }}
+      >
+        <ScoreTrendChart items={chartItems} passScore={80} />
       </Card>
 
       <Card>

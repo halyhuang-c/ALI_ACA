@@ -13,13 +13,18 @@ import {
   Table,
   Progress,
   Tooltip,
+  Modal,
+  Empty,
   message,
 } from 'antd'
 import {
   PieChartOutlined,
   CheckCircleOutlined,
+  CloseCircleOutlined,
   MinusCircleOutlined,
   ReloadOutlined,
+  EyeOutlined,
+  RobotOutlined,
 } from '@ant-design/icons'
 import { getCoverageAnalysis } from '../api'
 
@@ -35,6 +40,7 @@ export default function CoverageAnalysisPage() {
   const [pageSize] = useState(20)
   const [statusFilter, setStatusFilter] = useState(undefined)
   const [typeFilter, setTypeFilter] = useState(undefined)
+  const [detailItem, setDetailItem] = useState(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -144,6 +150,22 @@ export default function CoverageAnalysisPage() {
         <Tooltip title={v} placement="topLeft">
           <Text style={{ fontSize: 12 }}>{v}</Text>
         </Tooltip>
+      ),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 90,
+      fixed: 'right',
+      render: (_, r) => (
+        <Button
+          size="small"
+          type="link"
+          icon={<EyeOutlined />}
+          onClick={() => setDetailItem(r)}
+        >
+          明细
+        </Button>
       ),
     },
   ]
@@ -274,9 +296,103 @@ export default function CoverageAnalysisPage() {
             showTotal: (t) => `共 ${t} 条`,
             onChange: (p) => setPage(p),
           }}
-          scroll={{ x: 900 }}
+          scroll={{ x: 990 }}
         />
       </Card>
+
+      {/* 题目明细弹窗 */}
+      <Modal
+        open={!!detailItem}
+        title={detailItem ? `题目明细 #${detailItem.id}` : ''}
+        footer={null}
+        width={720}
+        onCancel={() => setDetailItem(null)}
+      >
+        {detailItem ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Space wrap>
+              {detailItem.question_type === '多选' ? (
+                <Tag color="purple">多选</Tag>
+              ) : (
+                <Tag color="blue">单选</Tag>
+              )}
+              {detailItem.category ? <Tag>{detailItem.category}</Tag> : null}
+              {detailItem.subcategory ? <Tag color="blue">{detailItem.subcategory}</Tag> : null}
+              {detailItem.appeared ? (
+                <Tag color="green" icon={<CheckCircleOutlined />}>已出现 {detailItem.pick_count} 次</Tag>
+              ) : (
+                <Tag color="default" icon={<MinusCircleOutlined />}>未出现</Tag>
+              )}
+              {detailItem.wrong_count > 0 ? (
+                <Tag color="red">错答 {detailItem.wrong_count} 次</Tag>
+              ) : null}
+              {detailItem.last_picked_at ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  上次抽中：{new Date(detailItem.last_picked_at).toLocaleString('zh-CN')}
+                </Text>
+              ) : null}
+            </Space>
+
+            <Paragraph style={{ marginBottom: 0 }}>{detailItem.full_text}</Paragraph>
+
+            {detailItem.options ? (
+              <div>
+                <Text strong style={{ fontSize: 13 }}>选项：</Text>
+                <div style={{ marginTop: 6 }}>
+                  {Object.entries(detailItem.options).map(([key, val]) => {
+                    const correctSet = new Set((detailItem.correct_answer || '').split('').map((c) => c.toUpperCase()))
+                    const isCorrect = correctSet.has(key.toUpperCase())
+                    return (
+                      <div
+                        key={key}
+                        style={{
+                          padding: '6px 10px',
+                          marginBottom: 4,
+                          borderRadius: 4,
+                          background: isCorrect ? '#f6ffed' : undefined,
+                          border: isCorrect ? '1px solid #b7eb8f' : '1px solid #f0f0f0',
+                        }}
+                      >
+                        <Text strong>{key}.</Text> {val}
+                        {isCorrect ? (
+                          <CheckCircleOutlined style={{ color: '#52c41a', marginLeft: 8 }} />
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            <Space size={8} wrap>
+              <Tag color="green">标准答案：{detailItem.correct_answer || '（无）'}</Tag>
+              {detailItem.ai_answer ? (
+                <Tag color={detailItem.ai_is_correct === true ? 'geekblue' : detailItem.ai_is_correct === false ? 'purple' : 'default'}>
+                  <RobotOutlined /> AI答案：{detailItem.ai_answer}
+                  {detailItem.ai_is_correct === true ? '（一致）' : detailItem.ai_is_correct === false ? '（不一致）' : ''}
+                </Tag>
+              ) : (
+                <Tag color="default"><RobotOutlined /> 暂无AI答案</Tag>
+              )}
+              {detailItem.ai_model ? <Tag color="blue">{detailItem.ai_model}</Tag> : null}
+            </Space>
+
+            {detailItem.ai_explanation ? (
+              <div style={{ background: '#fafafa', padding: 12, borderRadius: 6 }}>
+                <Space size={4} style={{ marginBottom: 6 }}>
+                  <RobotOutlined style={{ color: '#1677ff' }} />
+                  <Text strong style={{ fontSize: 13 }}>AI 题目分析</Text>
+                </Space>
+                <Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 13 }}>
+                  {detailItem.ai_explanation}
+                </Paragraph>
+              </div>
+            ) : null}
+          </Space>
+        ) : (
+          <Empty />
+        )}
+      </Modal>
     </Spin>
   )
 }

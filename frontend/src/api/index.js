@@ -147,6 +147,13 @@ export const getImageResponseDetail = (imageId) =>
 
 // ===== 考试 =====
 export const generateExam = () => request.get('/api/exam/generate')
+export const getActiveExam = () => request.get('/api/exam/active')
+export const saveExamProgress = (examId, answers) =>
+  request.post(`/api/exam/${examId}/save`, {
+    answers: answers.map(({ question_id, answer }) => ({ question_id, answer })),
+  })
+export const abandonExam = (examId) =>
+  request.post(`/api/exam/${examId}/abandon`)
 export const submitExam = (examId, answers, startedAt) =>
   request.post(`/api/exam/${examId}/submit`, { answers, started_at: startedAt })
 export const getExamHistory = (page = 1, pageSize = 20, passed = undefined) =>

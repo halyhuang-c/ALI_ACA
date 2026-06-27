@@ -30,6 +30,7 @@ def _run_lightweight_migrations(conn) -> None:
     _ensure_column(conn, "questions", "correct_answer", "VARCHAR")
     _ensure_column(conn, "questions", "category", "VARCHAR")
     _ensure_column(conn, "questions", "subcategory", "VARCHAR")
+    _ensure_column(conn, "exam_records", "abandoned_at", "DateTime")
 
 
 def _seed_default_llm_config() -> None:
